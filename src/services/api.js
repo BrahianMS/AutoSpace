@@ -86,8 +86,8 @@ export const subscriptionsService = {
     const subscriptionData = {
       userId: subscription.userId,
       vehicleId: subscription.vehicleId,
-      startDate: subscription.startDate,
-      endDate: subscription.endDate,
+      startDate: new Date(subscription.startDate).toISOString(),
+      endDate: new Date(subscription.endDate).toISOString(),
       monthlyPrice: subscription.monthlyPrice
     }
 
