@@ -97,7 +97,7 @@ export const subscriptionsService = {
 
   actualizar(id, subscription) {
     const updateData = {
-      endDate: subscription.endDate,
+      endDate: new Date(subscription.endDate).toISOString(),
       monthlyPrice: subscription.monthlyPrice,
       status: subscription.status
     }

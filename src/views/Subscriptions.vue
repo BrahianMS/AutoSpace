@@ -40,7 +40,6 @@
               <th>Usuario</th>
               <th>Vehículo</th>
               <th>Placa</th>
-              <th>Tipo</th>
               <th>Fecha Inicio</th>
               <th>Fecha Fin</th>
               <th>Precio Mensual</th>
@@ -52,16 +51,13 @@
             <tr v-for="subscription in subscriptionsFiltradas" :key="subscription.id">
               <td>
                 <div class="user-info">
-                  <strong>{{ subscription.user?.fullName }}</strong>
+                  <strong>{{ subscription.userFullName }}</strong>
                   <small>{{ subscription.user?.email }}</small>
                 </div>
               </td>
               <td>{{ subscription.vehicle?.type || 'N/A' }}</td>
               <td>
-                <span class="plate-badge">{{ subscription.vehicle?.plate }}</span>
-              </td>
-              <td>
-                <span class="type-badge">{{ subscription.vehicle?.type }}</span>
+                <span class="plate-badge">{{ subscription.vehiclePlate }}</span>
               </td>
               <td>{{ formatFecha(subscription.startDate) }}</td>
               <td>
