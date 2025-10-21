@@ -205,9 +205,9 @@
                   required
                   class="form-control"
                 >
-                  <option value="30 minutos">30 minutos</option>
-                  <option value="45 minutos">45 minutos</option>
-                  <option value="1 hora">1 hora</option>
+                  <option :value="30">30 minutos</option>
+                  <option :value="45">45 minutos</option>
+                  <option :value="60">1 hora</option>
                 </select>
                 <small class="help-text">Tiempo sin cargo al ingresar</small>
               </div>
