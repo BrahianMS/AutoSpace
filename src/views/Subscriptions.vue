@@ -29,6 +29,15 @@
           @input="aplicarFiltros"
         >
       </div>
+      <div class="filter-group">
+        <label>Tipo vehículo:</label>
+        <select v-model="filtroTipo" class="form-control">
+          <option value="">Todos</option>
+          <option value="Car">Automóvil</option>
+          <option value="Motorcycle">Motocicleta</option>
+          <option value="Truck">Camión</option>
+        </select>
+      </div>
       <button @click="limpiarFiltros" class="btn btn-outline-secondary">🔄 Limpiar</button>
     </div>
 
@@ -40,6 +49,7 @@
             <tr>
               <th>Usuario</th>
               <th>Placa</th>
+              <th>Tipo Vehículo</th>
               <th>Fecha Inicio</th>
               <th>Fecha Fin</th>
               <th>Precio Mensual</th>
@@ -57,6 +67,11 @@
               </td>
               <td>
                 <span class="plate-badge">{{ subscription.vehiclePlate }}</span>
+              </td>
+              <td>
+                <span :class="['type-badge', getTypeClass(subscription.vehicleType)]">
+                  {{ getTypeText(subscription.vehicleType) }}
+                </span>
               </td>
               <td>{{ formatFecha(subscription.startDate) }}</td>
               <td>
@@ -103,7 +118,7 @@
         
         <div v-if="subscriptionsFiltradas.length === 0" class="empty-state">
           <p>No se encontraron mensualidades</p>
-          <button v-if="filtroEstado || filtroPlaca" @click="limpiarFiltros" class="btn btn-primary">
+          <button v-if="filtroEstado || filtroPlaca || filtroTipo" @click="limpiarFiltros" class="btn btn-primary">
             Limpiar filtros
           </button>
         </div>
@@ -125,6 +140,14 @@
         <div class="stat-item">
           <span>Ingresos mensuales:</span>
           <strong class="text-success">${{ stats.ingresosMensuales.toLocaleString() }}</strong>
+        </div>
+      </div>
+      
+      <div class="stat-card">
+        <h4>🚗 Distribución por Tipo</h4>
+        <div class="stat-item" v-for="tipo in statsPorTipo" :key="tipo.tipo">
+          <span>{{ tipo.tipo }}:</span>
+          <strong>{{ tipo.cantidad }}</strong>
         </div>
       </div>
     </div>
@@ -166,11 +189,14 @@
               >
                 <option value="">Seleccionar vehículo...</option>
                 <option v-for="vehicle in vehiculosDelUsuario" :key="vehicle.id" :value="vehicle.id">
-                  {{ vehicle.plate }} - {{ vehicle.type }}
+                  {{ vehicle.plate }} - {{ getTypeText(vehicle.type) }}
                 </option>
               </select>
               <small v-if="!formData.userId" class="help-text">
                 Primero selecciona un usuario
+              </small>
+              <small v-else-if="vehiculosDelUsuario.length === 0" class="help-text warning">
+                El usuario seleccionado no tiene vehículos registrados
               </small>
             </div>
             
@@ -244,7 +270,7 @@
           <button @click="cerrarModal" class="btn btn-secondary">
             Cancelar
           </button>
-          <button @click="guardarSubscription" class="btn btn-primary" :disabled="guardando">
+          <button @click="guardarSubscription" class="btn btn-primary" :disabled="guardando || !formData.vehicleId">
             {{ guardando ? 'Guardando...' : (subscriptionEditar ? 'Actualizar' : 'Crear') }}
           </button>
         </div>
@@ -266,6 +292,7 @@ export default {
     const guardando = ref(false)
     const filtroEstado = ref('')
     const filtroPlaca = ref('')
+    const filtroTipo = ref('')
 
     const formData = reactive({
       userId: '',
@@ -285,7 +312,7 @@ export default {
       return appStore.vehicles.filter(v => v.userId === parseInt(formData.userId))
     })
 
-    // Computed para subscriptions filtradas - CORREGIDO: usa vehiclePlate
+    // Computed para subscriptions filtradas
     const subscriptionsFiltradas = computed(() => {
       let filtered = appStore.subscriptions
 
@@ -295,16 +322,21 @@ export default {
 
       if (filtroPlaca.value) {
         const placa = filtroPlaca.value.toLowerCase().trim()
-        // CORRECCIÓN: Usar vehiclePlate en lugar de vehicle?.plate
         filtered = filtered.filter(s => 
           s.vehiclePlate?.toLowerCase().includes(placa)
+        )
+      }
+
+      if (filtroTipo.value) {
+        filtered = filtered.filter(s => 
+          s.vehicleType === filtroTipo.value
         )
       }
 
       return filtered
     })
 
-    // Computed para estadísticas
+    // Computed para estadísticas generales
     const stats = computed(() => {
       const activas = appStore.activeSubscriptions.length
       const proximasVencer = appStore.expiringSubscriptions.length
@@ -312,6 +344,21 @@ export default {
         .reduce((sum, s) => sum + s.monthlyPrice, 0)
 
       return { activas, proximasVencer, ingresosMensuales }
+    })
+
+    // Computed para estadísticas por tipo de vehículo
+    const statsPorTipo = computed(() => {
+      const tipos = {}
+      appStore.subscriptions.forEach(sub => {
+        if (sub.vehicleType) {
+          tipos[sub.vehicleType] = (tipos[sub.vehicleType] || 0) + 1
+        }
+      })
+      
+      return Object.entries(tipos).map(([tipo, cantidad]) => ({
+        tipo: getTypeText(tipo),
+        cantidad
+      }))
     })
 
     const cargarVehiculosDelUsuario = () => {
@@ -358,8 +405,8 @@ export default {
       subscriptionEditar.value = subscription
       formData.userId = subscription.userId
       formData.vehicleId = subscription.vehicleId
-      formData.startDate = subscription.startDate.split('T')[0] // Formato YYYY-MM-DD
-      formData.endDate = subscription.endDate.split('T')[0] // Formato YYYY-MM-DD
+      formData.startDate = subscription.startDate.split('T')[0]
+      formData.endDate = subscription.endDate.split('T')[0]
       formData.monthlyPrice = subscription.monthlyPrice
       formData.status = subscription.status
       mostrarModal.value = true
@@ -386,10 +433,10 @@ export default {
     }
 
     const aplicarFiltros = () => {
-      // Los filtros se aplican automáticamente mediante computed
       console.log('Filtros aplicados:', { 
         estado: filtroEstado.value, 
         placa: filtroPlaca.value,
+        tipo: filtroTipo.value,
         resultados: subscriptionsFiltradas.value.length
       })
     }
@@ -397,12 +444,12 @@ export default {
     const limpiarFiltros = () => {
       filtroEstado.value = ''
       filtroPlaca.value = ''
+      filtroTipo.value = ''
     }
 
     const cerrarModal = () => {
       mostrarModal.value = false
       subscriptionEditar.value = null
-      // Reset form
       Object.keys(formData).forEach(key => {
         if (key === 'status') {
           formData[key] = 'Active'
@@ -450,6 +497,24 @@ export default {
       return statusMap[status] || status
     }
 
+    const getTypeClass = (tipo) => {
+      const typeMap = {
+        'Car': 'car',
+        'Motorcycle': 'motorcycle',
+        'Truck': 'truck'
+      }
+      return typeMap[tipo] || 'default'
+    }
+
+    const getTypeText = (tipo) => {
+      const typeMap = {
+        'Car': 'Automóvil',
+        'Motorcycle': 'Motocicleta',
+        'Truck': 'Camión'
+      }
+      return typeMap[tipo] || tipo || 'N/A'
+    }
+
     const calcularDuracion = () => {
       if (!formData.startDate || !formData.endDate) return 0
       const start = new Date(formData.startDate)
@@ -460,7 +525,7 @@ export default {
 
     const calcularValorTotal = () => {
       const duracion = calcularDuracion()
-      const precioDiario = formData.monthlyPrice / 30 // Aproximación
+      const precioDiario = formData.monthlyPrice / 30
       return Math.round(duracion * precioDiario)
     }
 
@@ -484,7 +549,9 @@ export default {
       guardando,
       filtroEstado,
       filtroPlaca,
+      filtroTipo,
       stats,
+      statsPorTipo,
       minStartDate,
       loading: appStore.loading,
       guardarSubscription,
@@ -499,6 +566,8 @@ export default {
       estaProximaVencer,
       getStatusClass,
       getStatusText,
+      getTypeClass,
+      getTypeText,
       calcularDuracion,
       calcularValorTotal
     }
@@ -614,6 +683,34 @@ export default {
   font-family: monospace;
   font-weight: bold;
   font-size: 0.9rem;
+}
+
+.type-badge {
+  padding: 6px 12px;
+  border-radius: 12px;
+  font-size: 0.8rem;
+  font-weight: 500;
+  text-transform: uppercase;
+}
+
+.type-badge.car {
+  background: #d4edda;
+  color: #155724;
+}
+
+.type-badge.motorcycle {
+  background: #fff3cd;
+  color: #856404;
+}
+
+.type-badge.truck {
+  background: #d1ecf1;
+  color: #0c5460;
+}
+
+.type-badge.default {
+  background: #e2e3e5;
+  color: #383d41;
 }
 
 .text-danger {
@@ -814,6 +911,10 @@ export default {
   margin-top: 4px;
   font-size: 0.8rem;
   color: #6c757d;
+}
+
+.help-text.warning {
+  color: #856404;
 }
 
 /* Resumen de mensualidad */
