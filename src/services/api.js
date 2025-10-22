@@ -441,28 +441,58 @@ export const searchService = {
   }
 }
 
-// ==================== SERVICIO DE REPORTES ====================
+// services/api.js - AGREGAR operadores
 export const reportsService = {
-  generarReporteDiario(fecha = new Date()) {
-    // Puedes expandir esto para generar reportes específicos
-    return Promise.all([
-      dashboardService.obtenerMetricas(),
-      ticketsService.obtenerTodos()
-    ])
+  // Reporte de ingresos
+  getIncomeReport(filters) {
+    return apiClient.get('/reports/income', { 
+      params: {
+        startDate: filters.startDate,
+        endDate: filters.endDate
+      }
+    });
   },
 
-  async generarReporteMensual(mes, año) {
-    const metricas = await dashboardService.obtenerMetricas()
-    const tickets = await ticketsService.obtenerTodos()
+  // Reporte de suscripciones
+  getSubscriptionsReport(filters) {
+    return apiClient.get('/reports/subscriptions', { 
+      params: {
+        startDate: filters.startDate,
+        endDate: filters.endDate
+      }
+    });
+  },
 
-    return {
-      metricas: metricas.data,
-      totalTickets: tickets.data.length,
-      ticketsPagados: tickets.data.filter(t => t.totalAmount > 0).length,
-      ingresosTotales: tickets.data.reduce((sum, t) => sum + (t.totalAmount || 0), 0)
-    }
+  // Reporte de usuarios
+  getUsersReport(filters) {
+    return apiClient.get('/reports/users', { 
+      params: {
+        startDate: filters.startDate,
+        endDate: filters.endDate
+      }
+    });
+  },
+
+  // Reporte de operadores
+  getOperatorsReport(filters) {
+    return apiClient.get('/reports/operators', { 
+      params: {
+        startDate: filters.startDate,
+        endDate: filters.endDate
+      }
+    });
+  },
+
+  // Reporte de vehículos
+  getVehiclesReport(filters) {
+    return apiClient.get('/reports/vehicles', { 
+      params: {
+        startDate: filters.startDate,
+        endDate: filters.endDate
+      }
+    });
   }
-}
+};
 
 // ==================== CONFIGURACIÓN GLOBAL ====================
 export const apiConfig = {
@@ -482,6 +512,9 @@ export const apiConfig = {
     apiClient.defaults.headers.common['Accept-Language'] = lang
   }
 }
+
+
+
 
 // Exportación por defecto
 export default apiClient
