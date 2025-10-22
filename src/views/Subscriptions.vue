@@ -26,9 +26,10 @@
           v-model="filtroPlaca"
           placeholder="ABC123"
           class="form-control"
+          @input="aplicarFiltros"
         >
       </div>
-      <button @click="aplicarFiltros" class="btn btn-outline-primary">🔍 Aplicar Filtros</button>
+      <button @click="limpiarFiltros" class="btn btn-outline-secondary">🔄 Limpiar</button>
     </div>
 
     <!-- Tabla de mensualidades -->
@@ -38,7 +39,6 @@
           <thead>
             <tr>
               <th>Usuario</th>
-              <th>Vehículo</th>
               <th>Placa</th>
               <th>Fecha Inicio</th>
               <th>Fecha Fin</th>
@@ -55,7 +55,6 @@
                   <small>{{ subscription.user?.email }}</small>
                 </div>
               </td>
-              <td>{{ subscription.vehicle?.type || 'N/A' }}</td>
               <td>
                 <span class="plate-badge">{{ subscription.vehiclePlate }}</span>
               </td>
@@ -68,7 +67,7 @@
               <td>${{ subscription.monthlyPrice.toLocaleString() }}</td>
               <td>
                 <span :class="['status-badge', getStatusClass(subscription.status)]">
-                  {{ subscription.status }}
+                  {{ getStatusText(subscription.status) }}
                 </span>
               </td>
               <td>
@@ -104,6 +103,9 @@
         
         <div v-if="subscriptionsFiltradas.length === 0" class="empty-state">
           <p>No se encontraron mensualidades</p>
+          <button v-if="filtroEstado || filtroPlaca" @click="limpiarFiltros" class="btn btn-primary">
+            Limpiar filtros
+          </button>
         </div>
       </div>
     </div>
@@ -144,6 +146,7 @@
                 v-model="formData.userId"
                 required
                 class="form-control"
+                @change="cargarVehiculosDelUsuario"
               >
                 <option value="">Seleccionar usuario...</option>
                 <option v-for="user in usuarios" :key="user.id" :value="user.id">
@@ -159,12 +162,16 @@
                 v-model="formData.vehicleId"
                 required
                 class="form-control"
+                :disabled="!formData.userId"
               >
                 <option value="">Seleccionar vehículo...</option>
                 <option v-for="vehicle in vehiculosDelUsuario" :key="vehicle.id" :value="vehicle.id">
                   {{ vehicle.plate }} - {{ vehicle.type }}
                 </option>
               </select>
+              <small v-if="!formData.userId" class="help-text">
+                Primero selecciona un usuario
+              </small>
             </div>
             
             <div class="form-row">
@@ -175,6 +182,7 @@
                   v-model="formData.startDate"
                   required
                   class="form-control"
+                  :min="minStartDate"
                 >
               </div>
               
@@ -185,6 +193,7 @@
                   v-model="formData.endDate"
                   required
                   class="form-control"
+                  :min="formData.startDate || minStartDate"
                 >
               </div>
             </div>
@@ -199,6 +208,7 @@
                   min="0"
                   step="1000"
                   class="form-control"
+                  placeholder="0"
                 >
               </div>
               
@@ -212,6 +222,19 @@
                   <option value="Active">Activa</option>
                   <option value="Inactive">Inactiva</option>
                 </select>
+              </div>
+            </div>
+
+            <!-- Información de resumen -->
+            <div v-if="formData.monthlyPrice > 0 && formData.startDate && formData.endDate" class="summary-card">
+              <h5>Resumen de la Mensualidad</h5>
+              <div class="summary-item">
+                <span>Duración:</span>
+                <strong>{{ calcularDuracion() }} días</strong>
+              </div>
+              <div class="summary-item">
+                <span>Valor total:</span>
+                <strong class="text-success">${{ calcularValorTotal().toLocaleString() }}</strong>
               </div>
             </div>
           </form>
@@ -253,13 +276,16 @@ export default {
       status: 'Active'
     })
 
+    // Fecha mínima para inicio (hoy)
+    const minStartDate = new Date().toISOString().split('T')[0]
+
     // Computed para vehículos del usuario seleccionado
     const vehiculosDelUsuario = computed(() => {
       if (!formData.userId) return []
       return appStore.vehicles.filter(v => v.userId === parseInt(formData.userId))
     })
 
-    // Computed para subscriptions filtradas
+    // Computed para subscriptions filtradas - CORREGIDO: usa vehiclePlate
     const subscriptionsFiltradas = computed(() => {
       let filtered = appStore.subscriptions
 
@@ -268,9 +294,10 @@ export default {
       }
 
       if (filtroPlaca.value) {
-        const placa = filtroPlaca.value.toLowerCase()
+        const placa = filtroPlaca.value.toLowerCase().trim()
+        // CORRECCIÓN: Usar vehiclePlate en lugar de vehicle?.plate
         filtered = filtered.filter(s => 
-          s.vehicle?.plate.toLowerCase().includes(placa)
+          s.vehiclePlate?.toLowerCase().includes(placa)
         )
       }
 
@@ -287,9 +314,30 @@ export default {
       return { activas, proximasVencer, ingresosMensuales }
     })
 
+    const cargarVehiculosDelUsuario = () => {
+      // Reset vehicleId cuando cambia el usuario
+      formData.vehicleId = ''
+    }
+
     const guardarSubscription = async () => {
       try {
         guardando.value = true
+        
+        // Validaciones básicas
+        if (!formData.userId || !formData.vehicleId) {
+          alert('Por favor selecciona un usuario y un vehículo')
+          return
+        }
+
+        if (new Date(formData.endDate) <= new Date(formData.startDate)) {
+          alert('La fecha de fin debe ser posterior a la fecha de inicio')
+          return
+        }
+
+        if (formData.monthlyPrice <= 0) {
+          alert('El precio mensual debe ser mayor a 0')
+          return
+        }
         
         if (subscriptionEditar.value) {
           await appStore.updateSubscription(subscriptionEditar.value.id, formData)
@@ -300,6 +348,7 @@ export default {
         cerrarModal()
       } catch (error) {
         console.error('Error guardando mensualidad:', error)
+        alert(error.response?.data?.error || 'Error guardando mensualidad')
       } finally {
         guardando.value = false
       }
@@ -309,8 +358,8 @@ export default {
       subscriptionEditar.value = subscription
       formData.userId = subscription.userId
       formData.vehicleId = subscription.vehicleId
-      formData.startDate = subscription.startDate
-      formData.endDate = subscription.endDate
+      formData.startDate = subscription.startDate.split('T')[0] // Formato YYYY-MM-DD
+      formData.endDate = subscription.endDate.split('T')[0] // Formato YYYY-MM-DD
       formData.monthlyPrice = subscription.monthlyPrice
       formData.status = subscription.status
       mostrarModal.value = true
@@ -322,6 +371,7 @@ export default {
           await appStore.inactivateSubscription(id)
         } catch (error) {
           console.error('Error inactivando mensualidad:', error)
+          alert('Error inactivando mensualidad')
         }
       }
     }
@@ -331,12 +381,22 @@ export default {
         await appStore.updateSubscription(id, { status: 'Active' })
       } catch (error) {
         console.error('Error activando mensualidad:', error)
+        alert('Error activando mensualidad')
       }
     }
 
     const aplicarFiltros = () => {
       // Los filtros se aplican automáticamente mediante computed
-      console.log('Filtros aplicados:', { estado: filtroEstado.value, placa: filtroPlaca.value })
+      console.log('Filtros aplicados:', { 
+        estado: filtroEstado.value, 
+        placa: filtroPlaca.value,
+        resultados: subscriptionsFiltradas.value.length
+      })
+    }
+
+    const limpiarFiltros = () => {
+      filtroEstado.value = ''
+      filtroPlaca.value = ''
     }
 
     const cerrarModal = () => {
@@ -355,10 +415,16 @@ export default {
     }
 
     const formatFecha = (fecha) => {
-      return new Date(fecha).toLocaleDateString('es-ES')
+      if (!fecha) return 'N/A'
+      return new Date(fecha).toLocaleDateString('es-ES', {
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric'
+      })
     }
 
     const estaProximaVencer = (fechaFin) => {
+      if (!fechaFin) return false
       const fin = new Date(fechaFin)
       const hoy = new Date()
       const diffTime = fin - hoy
@@ -369,9 +435,33 @@ export default {
     const getStatusClass = (status) => {
       const statusMap = {
         'Active': 'success',
-        'Inactive': 'secondary'
+        'Inactive': 'secondary',
+        'Cancelled': 'danger'
       }
       return statusMap[status] || 'secondary'
+    }
+
+    const getStatusText = (status) => {
+      const statusMap = {
+        'Active': 'Activa',
+        'Inactive': 'Inactiva',
+        'Cancelled': 'Cancelada'
+      }
+      return statusMap[status] || status
+    }
+
+    const calcularDuracion = () => {
+      if (!formData.startDate || !formData.endDate) return 0
+      const start = new Date(formData.startDate)
+      const end = new Date(formData.endDate)
+      const diffTime = end - start
+      return Math.ceil(diffTime / (1000 * 60 * 60 * 24))
+    }
+
+    const calcularValorTotal = () => {
+      const duracion = calcularDuracion()
+      const precioDiario = formData.monthlyPrice / 30 // Aproximación
+      return Math.round(duracion * precioDiario)
     }
 
     onMounted(async () => {
@@ -395,16 +485,22 @@ export default {
       filtroEstado,
       filtroPlaca,
       stats,
+      minStartDate,
       loading: appStore.loading,
       guardarSubscription,
       editarSubscription,
       inactivarSubscription,
       activarSubscription,
       aplicarFiltros,
+      limpiarFiltros,
       cerrarModal,
+      cargarVehiculosDelUsuario,
       formatFecha,
       estaProximaVencer,
-      getStatusClass
+      getStatusClass,
+      getStatusText,
+      calcularDuracion,
+      calcularValorTotal
     }
   }
 }
@@ -517,22 +613,20 @@ export default {
   border-radius: 6px;
   font-family: monospace;
   font-weight: bold;
+  font-size: 0.9rem;
 }
 
-.type-badge {
-  background: #e8f5e8;
-  color: #2e7d32;
-  padding: 4px 8px;
-  border-radius: 6px;
-  font-size: 0.8rem;
-  font-weight: 500;
+.text-danger {
+  color: #dc3545;
+  font-weight: bold;
 }
 
 .status-badge {
-  padding: 4px 8px;
+  padding: 6px 12px;
   border-radius: 12px;
   font-size: 0.8rem;
   font-weight: 500;
+  text-transform: uppercase;
 }
 
 .status-badge.success {
@@ -543,6 +637,11 @@ export default {
 .status-badge.secondary {
   background: #e2e3e5;
   color: #383d41;
+}
+
+.status-badge.danger {
+  background: #f8d7da;
+  color: #721c24;
 }
 
 .action-buttons {
@@ -710,6 +809,32 @@ export default {
   box-shadow: 0 0 0 2px rgba(78, 115, 223, 0.25);
 }
 
+.help-text {
+  display: block;
+  margin-top: 4px;
+  font-size: 0.8rem;
+  color: #6c757d;
+}
+
+/* Resumen de mensualidad */
+.summary-card {
+  background: #f8f9fa;
+  border-radius: 8px;
+  padding: 15px;
+  border-left: 4px solid #4e73df;
+}
+
+.summary-card h5 {
+  margin: 0 0 10px 0;
+  color: #2c3e50;
+}
+
+.summary-item {
+  display: flex;
+  justify-content: space-between;
+  padding: 5px 0;
+}
+
 /* Botones */
 .btn {
   padding: 10px 20px;
@@ -755,6 +880,17 @@ export default {
   color: white;
 }
 
+.btn-outline-secondary {
+  background: white;
+  color: #6c757d;
+  border: 1px solid #6c757d;
+}
+
+.btn-outline-secondary:hover {
+  background: #6c757d;
+  color: white;
+}
+
 /* Responsive */
 @media (max-width: 768px) {
   .form-row {
@@ -772,6 +908,15 @@ export default {
   
   .modal-content {
     margin: 20px;
+  }
+
+  .data-table {
+    font-size: 0.9rem;
+  }
+
+  .action-buttons {
+    flex-direction: column;
+    gap: 3px;
   }
 }
 </style>
