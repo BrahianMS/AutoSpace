@@ -25,15 +25,15 @@
           <div class="rate-details">
             <div class="rate-item">
               <span class="label">Hora:</span>
-              <span class="value">${{ rate.hourPrice.toLocaleString() }}</span>
+              <span class="value">${{ rate.hourPrice }}</span>
             </div>
             <div class="rate-item">
               <span class="label">Fracción (15min):</span>
-              <span class="value">${{ rate.addPrice.toLocaleString() }}</span>
+              <span class="value">${{ rate.addPrice }}</span>
             </div>
             <div class="rate-item">
               <span class="label">Tope Diario:</span>
-              <span class="value">${{ (rate.maxPrice || 0).toLocaleString() }}</span>
+              <span class="value">${{ (rate.maxPrice || 0)}}</span>
             </div>
             <div class="rate-item">
               <span class="label">Tiempo Gracia:</span>
@@ -87,9 +87,9 @@
               <td>
                 <strong>{{ rate.typeVehicle }}</strong>
               </td>
-              <td>${{ rate.hourPrice.toLocaleString() }}</td>
-              <td>${{ rate.addPrice.toLocaleString() }}</td>
-              <td>${{ (rate.maxPrice || 0).toLocaleString() }}</td>
+              <td>${{ rate.hourPrice }}</td>
+              <td>${{ rate.addPrice}}</td>
+              <td>${{ (rate.maxPrice || 0) }}</td>
               <td>{{ rate.graceTime }}</td>
               <td>
                 <span :class="['status-badge', rate.status === 'Active' ? 'active' : 'inactive']">
