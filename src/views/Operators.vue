@@ -76,8 +76,8 @@
             <td>{{ operator.document || 'N/A' }}</td>
             <td>{{ operator.email || 'N/A' }}</td>
             <td>
-                <span :class="['status-badge', operator.status === 'Active' ? 'active' : 'inactive']">
-                  {{ operator.status === 'Active' ? 'Activo' : 'Inactivo' }}
+                <span :class="['status-badge', operator.isActive ? 'active' : 'inactive']">
+                  {{ operator.isActive ? 'Activo' : 'Inactivo' }}
                 </span>
             </td>
             <td>{{ operator.ticketsProcessed || 0 }}</td>
@@ -92,30 +92,34 @@
                   ✏️
                 </button>
 
+                <!-- Botón para Inactivar (solo si está activo) -->
                 <button
-                  v-if="operator.status === 'Active'"
-                  @click="cambiarEstado(operator.id, 'Inactive')"
+                  v-if="operator.isActive"
+                  @click="inactivarOperator(operator)"
                   class="btn-icon warning"
-                  title="Desactivar"
+                  title="Inactivar"
                 >
                   ⏸️
                 </button>
+
+                <!-- Botón para Reactivar (solo si está inactivo) -->
                 <button
-                  v-if="operator.status === 'Inactive'"
-                  @click="cambiarEstado(operator.id, 'Active')"
+                  v-else
+                  @click="reactivarOperator(operator)"
                   class="btn-icon success"
-                  title="Activar"
+                  title="Reactivar"
                 >
                   ✅
                 </button>
 
-                <button
+                <!-- ELIMINADO: Botón de eliminar -->
+                <!-- <button
                   @click="eliminarOperator(operator.id)"
                   class="btn-icon danger"
                   title="Eliminar"
                 >
                   🗑️
-                </button>
+                </button> -->
               </div>
             </td>
           </tr>
@@ -162,7 +166,7 @@
               </div>
 
               <div class="form-group">
-                <label>Estado *</label>
+                <label>Estado Operativo *</label>
                 <select
                   v-model="formData.status"
                   required
@@ -170,6 +174,7 @@
                 >
                   <option value="Active">Activo</option>
                   <option value="Inactive">Inactivo</option>
+                  <option value="Vacations">Vacaciones</option>
                 </select>
               </div>
             </div>
@@ -182,6 +187,25 @@
                 placeholder="operador@autospace.com"
                 class="form-control"
               >
+            </div>
+
+            <!-- Campo para activar/desactivar operador (solo en edición) -->
+            <div v-if="operatorEditar" class="form-group">
+              <label>Estado en el Sistema</label>
+              <div class="checkbox-group">
+                <input 
+                  type="checkbox" 
+                  v-model="formData.isActive" 
+                  id="isActive"
+                  class="checkbox-input"
+                >
+                <label for="isActive" class="checkbox-label">
+                  Operador activo en el sistema
+                </label>
+              </div>
+              <small class="help-text">
+                Los operadores inactivos no pueden ser asignados a nuevos tickets
+              </small>
             </div>
           </form>
         </div>
@@ -217,23 +241,32 @@ export default {
       fullName: '',
       document: '',
       email: '',
-      status: 'Active'
+      status: 'Active',
+      isActive: true // Nuevo campo para el estado del sistema
     })
 
     // Cargar operadores
     const cargarOperadores = async () => {
       try {
-        const response = await operatorsService.obtenerTodos()
+        // Usar el endpoint que incluye inactivos
+        const response = await operatorsService.obtenerTodosConInactivos()
         operators.value = response.data
       } catch (error) {
         console.error('Error cargando operadores:', error)
+        // Si falla, intentar con el endpoint normal
+        try {
+          const response = await operatorsService.obtenerTodos()
+          operators.value = response.data
+        } catch (fallbackError) {
+          console.error('Error cargando operadores (fallback):', fallbackError)
+        }
       }
     }
 
     // Computed para estadísticas
     const stats = computed(() => {
       const total = operators.value.length
-      const activos = operators.value.filter(op => op.status === 'Active').length
+      const activos = operators.value.filter(op => op.isActive).length
       const totalRecaudado = operators.value.reduce((sum, op) => sum + (op.totalCollected || 0), 0)
       return { total, activos, totalRecaudado }
     })
@@ -242,9 +275,11 @@ export default {
     const operatorsFiltrados = computed(() => {
       let filtered = operators.value
 
-      // Filtro por estado
-      if (filtroEstado.value) {
-        filtered = filtered.filter(op => op.status === filtroEstado.value)
+      // Filtro por estado (isActive)
+      if (filtroEstado.value === 'Active') {
+        filtered = filtered.filter(op => op.isActive)
+      } else if (filtroEstado.value === 'Inactive') {
+        filtered = filtered.filter(op => !op.isActive)
       }
 
       // Filtro por búsqueda de texto
@@ -265,9 +300,22 @@ export default {
         guardando.value = true
 
         if (operatorEditar.value) {
-          await operatorsService.actualizar(operatorEditar.value.id, formData)
+          // Para editar, enviar todos los campos incluyendo isActive
+          await operatorsService.actualizar(operatorEditar.value.id, {
+            fullName: formData.fullName,
+            document: formData.document,
+            email: formData.email,
+            status: formData.status,
+            isActive: formData.isActive
+          })
         } else {
-          await operatorsService.crear(formData)
+          // Para crear, solo enviar los campos básicos (isActive será true por defecto en el backend)
+          await operatorsService.crear({
+            fullName: formData.fullName,
+            document: formData.document,
+            email: formData.email,
+            status: formData.status
+          })
         }
 
         await cargarOperadores()
@@ -286,34 +334,56 @@ export default {
       formData.document = operator.document
       formData.email = operator.email
       formData.status = operator.status
+      formData.isActive = operator.isActive // Cargar el estado del sistema
       mostrarModal.value = true
     }
 
-    const cambiarEstado = async (id, nuevoEstado) => {
-      const confirmacion = confirm(`¿Está seguro de ${nuevoEstado === 'Active' ? 'activar' : 'desactivar'} este operador?`)
+    const inactivarOperator = async (operator) => {
+      const confirmacion = confirm(`¿Está seguro de inactivar a ${operator.fullName}?\n\nEl operador ya no podrá ser asignado a nuevos tickets, pero se mantendrán todos sus datos históricos.`)
       if (!confirmacion) return
 
       try {
-        await operatorsService.actualizar(id, { status: nuevoEstado })
+        await operatorsService.inactivar(operator.id)
         await cargarOperadores()
+        alert('Operador inactivado exitosamente')
       } catch (error) {
-        console.error('Error cambiando estado:', error)
-        alert('Error cambiando estado del operador')
+        console.error('Error inactivando operador:', error)
+        const errorMessage = error.response?.data?.message || error.response?.data?.error || 'Error inactivando operador'
+        alert(errorMessage)
       }
     }
 
-    const eliminarOperator = async (id) => {
-      const confirmacion = confirm('¿Está seguro de eliminar este operador?')
-      if (!confirmacion) return
-
+    const reactivarOperator = async (operator) => {
       try {
-        await operatorsService.eliminar(id)
+        // Para reactivar, usamos el endpoint de actualización
+        await operatorsService.actualizar(operator.id, {
+          fullName: operator.fullName,
+          document: operator.document,
+          email: operator.email,
+          status: operator.status,
+          isActive: true // Reactivar
+        })
         await cargarOperadores()
+        alert('Operador reactivado exitosamente')
       } catch (error) {
-        console.error('Error eliminando operador:', error)
-        alert('Error eliminando operador')
+        console.error('Error reactivando operador:', error)
+        alert('Error reactivando operador')
       }
     }
+
+    // ELIMINADO: Función de eliminar operador
+    // const eliminarOperator = async (id) => {
+    //   const confirmacion = confirm('¿Está seguro de eliminar este operador?')
+    //   if (!confirmacion) return
+
+    //   try {
+    //     await operatorsService.eliminar(id)
+    //     await cargarOperadores()
+    //   } catch (error) {
+    //     console.error('Error eliminando operador:', error)
+    //     alert('Error eliminando operador')
+    //   }
+    // }
 
     const cerrarModal = () => {
       mostrarModal.value = false
@@ -322,6 +392,8 @@ export default {
       Object.keys(formData).forEach(key => {
         if (key === 'status') {
           formData[key] = 'Active'
+        } else if (key === 'isActive') {
+          formData[key] = true
         } else {
           formData[key] = ''
         }
@@ -344,8 +416,8 @@ export default {
       stats,
       guardarOperator,
       editarOperator,
-      cambiarEstado,
-      eliminarOperator,
+      inactivarOperator,
+      reactivarOperator,
       cerrarModal
     }
   }
@@ -353,6 +425,66 @@ export default {
 </script>
 
 <style scoped>
+/* Tus estilos existentes se mantienen igual, solo agregamos estos nuevos */
+
+.checkbox-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.checkbox-input {
+  margin: 0;
+  width: 16px;
+  height: 16px;
+}
+
+.checkbox-label {
+  margin: 0;
+  font-weight: normal;
+  cursor: pointer;
+}
+
+.help-text {
+  display: block;
+  margin-top: 4px;
+  font-size: 0.8rem;
+  color: #6c757d;
+}
+
+/* Aseguramos que los botones de acción tengan el mismo estilo */
+.action-buttons {
+  display: flex;
+  gap: 5px;
+}
+
+.btn-icon {
+  background: none;
+  border: none;
+  padding: 5px;
+  cursor: pointer;
+  border-radius: 4px;
+  transition: background 0.2s;
+}
+
+.btn-icon:hover {
+  background: #e9ecef;
+}
+
+.btn-icon.warning:hover {
+  background: #fff3cd;
+}
+
+.btn-icon.success:hover {
+  background: #d4edda;
+}
+
+.btn-icon.danger:hover {
+  background: #f8d7da;
+}
+
+/* Mantenemos todos tus estilos existentes */
 .operators {
   padding: 20px;
   max-width: 1400px;
@@ -375,7 +507,6 @@ export default {
   font-size: 1.1rem;
 }
 
-/* Estadísticas */
 .stats-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
@@ -417,7 +548,6 @@ export default {
   font-size: 0.9rem;
 }
 
-/* Tabla */
 .table-card {
   background: white;
   border-radius: 12px;
@@ -496,43 +626,12 @@ export default {
   color: #383d41;
 }
 
-.action-buttons {
-  display: flex;
-  gap: 5px;
-}
-
-.btn-icon {
-  background: none;
-  border: none;
-  padding: 5px;
-  cursor: pointer;
-  border-radius: 4px;
-  transition: background 0.2s;
-}
-
-.btn-icon:hover {
-  background: #e9ecef;
-}
-
-.btn-icon.warning:hover {
-  background: #fff3cd;
-}
-
-.btn-icon.success:hover {
-  background: #d4edda;
-}
-
-.btn-icon.danger:hover {
-  background: #f8d7da;
-}
-
 .empty-state {
   text-align: center;
   padding: 40px 0;
   color: #6c757d;
 }
 
-/* Modal y Form */
 .modal-overlay {
   position: fixed;
   top: 0;
@@ -630,7 +729,6 @@ export default {
   font-size: 0.9rem;
 }
 
-/* Botones */
 .btn {
   padding: 10px 20px;
   border: none;
@@ -664,7 +762,6 @@ export default {
   background: #5a6268;
 }
 
-/* Responsive */
 @media (max-width: 768px) {
   .form-row {
     grid-template-columns: 1fr;

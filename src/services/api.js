@@ -167,6 +167,11 @@ export const operatorsService = {
     return apiClient.get('/operators')
   },
 
+  // ✅ NUEVO: Obtener todos los operadores (activos e inactivos)
+  obtenerTodosConInactivos() {
+    return apiClient.get('/operators/all')
+  },
+
   obtenerActivos() {
     return apiClient.get('/operators/active')
   },
@@ -200,16 +205,20 @@ export const operatorsService = {
     return apiClient.put(`/operators/${id}`, updateData)
   },
 
-  eliminar(id) {
-    return apiClient.delete(`/operators/${id}`)
+  // ✅ REEMPLAZADO: En lugar de eliminar, inactivamos
+  inactivar(id) {
+    console.log('🔵 Inactivando operador con ID:', id)
+    return apiClient.patch(`/operators/${id}/deactivate`)
   },
 
-  activar(id) {
-    return this.actualizar(id, { isActive: true })
-  },
+  // ❌ ELIMINADO: Ya no usamos eliminación física
+  // eliminar(id) {
+  //   return apiClient.delete(`/operators/${id}`)
+  // },
 
-  desactivar(id) {
-    return this.actualizar(id, { isActive: false })
+  // ✅ OPCIONAL: Método para reactivar (si decides implementarlo en el backend)
+  reactivar(id) {
+    return apiClient.patch(`/operators/${id}/activate`)
   }
 }
 
